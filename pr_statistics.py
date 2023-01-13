@@ -10,11 +10,10 @@ import smtplib
 import subprocess
 import sys
 import yaml
-from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from logging import handlers
-from openpyxl.styles import Alignment, Border, PatternFill, Side
+from openpyxl.styles import Alignment, Border, PatternFill, Side, Font
 from xlsx2html import xlsx2html
 
 
@@ -209,6 +208,12 @@ def create_email_mappings():
                         if committer_email in ['null', 'NA'] or not committer_email:
                             committer_email = ''
                         email_mappings[committer_gitee_id] = committer_email
+    ready_to_remove = []
+    for email_mapping in email_mappings:
+        if not email_mappings[email_mapping]:
+            ready_to_remove.append(email_mapping)
+    for i in ready_to_remove:
+        del email_mappings[i]
     # generate email_mappings.yaml
     with open('email_mapping.yaml', 'w', encoding='utf-8') as f:
         yaml.dump(email_mappings, f, default_flow_style=False)
@@ -237,8 +242,7 @@ def csv_to_xlsx(filepath):
         return
     # sorting
     df = pd.read_csv(filepath, encoding='utf-8')
-    data = df.sort_values(by='PR开启天数', ascending=False)
-    data.to_csv(filepath, mode='w', index=False)
+    df.to_csv(filepath, mode='w', index=False)
 
     csv_file = pd.read_csv(filepath, encoding='utf-8')
     xlsx_filepath = filepath.replace('.csv', '.xlsx')
@@ -250,98 +254,96 @@ def csv_to_xlsx(filepath):
     return xlsx_filepath
 
 
-def generate_one_row_table(xlsx_file):
-    """
-    Generate html file with only one line of form
-    :param xlsx_file: path of the xlsx file
-    """
-    csv_file = xlsx_file.replace('.xlsx', '.csv')
-    html_file = xlsx_file.replace('.xlsx', '.html')
-    f1 = open(csv_file, 'r', encoding='utf-8')
-    info = f1.readlines()[1]
-    f1.close()
-    sig, repo, ref, link, status, duration, reviewers = info.replace('\n', '').split(',', 6)
-    template = """
-    <!DOCTYPE html> <html lang="en"> <head> <meta charset="UTF-8"> <title>Title</title> </head> <body> 
-    <table style="border-collapse: collapse" border="0" cellspacing="0" cellpadding="0"><colgroup></colgroup> <tr> 
-    <td id="open_pull_requests_statistics!A1" style="border-bottom-color: #000000;border-bottom-style: 
-    solid;border-bottom-width: 1px;border-collapse: collapse;border-left-color: #000000;border-left-style: 
-    solid;border-left-width: 1px;border-right-color: #000000;border-right-style: solid;border-right-width: 
-    1px;border-top-color: #000000;border-top-style: solid;border-top-width: 1px;font-size: Nonepx;font-weight: 
-    bold;height: 19pt;text-align: center">SIG组</td> <td id="open_pull_requests_statistics!B1" 
-    style="border-bottom-color: #000000;border-bottom-style: solid;border-bottom-width: 1px;border-collapse: 
-    collapse;border-left-color: #000000;border-left-style: solid;border-left-width: 1px;border-right-color: 
-    #000000;border-right-style: solid;border-right-width: 1px;border-top-color: #000000;border-top-style: 
-    solid;border-top-width: 1px;font-size: Nonepx;font-weight: bold;height: 19pt;text-align: center">仓库</td> <td 
-    id="open_pull_requests_statistics!C1" style="border-bottom-color: #000000;border-bottom-style: 
-    solid;border-bottom-width: 1px;border-collapse: collapse;border-left-color: #000000;border-left-style: 
-    solid;border-left-width: 1px;border-right-color: #000000;border-right-style: solid;border-right-width: 
-    1px;border-top-color: #000000;border-top-style: solid;border-top-width: 1px;font-size: Nonepx;font-weight: 
-    bold;height: 19pt;text-align: center">目标分支</td> <td 
-    id="open_pull_requests_statistics!D1" style="border-bottom-color: #000000;border-bottom-style: 
-    solid;border-bottom-width: 1px;border-collapse: collapse;border-left-color: #000000;border-left-style: 
-    solid;border-left-width: 1px;border-right-color: #000000;border-right-style: solid;border-right-width: 
-    1px;border-top-color: #000000;border-top-style: solid;border-top-width: 1px;font-size: Nonepx;font-weight: 
-    bold;height: 19pt;text-align: center">PR链接</td><td id="open_pull_requests_statistics!E1" 
-    style="border-bottom-color: #000000;border-bottom-style: solid;border-bottom-width: 1px;border-collapse: 
-    collapse;border-left-color: #000000;border-left-style: solid;border-left-width: 1px;border-right-color: 
-    #000000;border-right-style: solid;border-right-width: 1px;border-top-color: #000000;border-top-style: 
-    solid;border-top-width: 1px;font-size: Nonepx;font-weight: bold;height: 19pt;text-align: center">PR状态</td> <td 
-    id="open_pull_requests_statistics!F1" style="border-bottom-color: #000000;border-bottom-style: 
-    solid;border-bottom-width: 1px;border-collapse: collapse;border-left-color: #000000;border-left-style: 
-    solid;border-left-width: 1px;border-right-color: #000000;border-right-style: solid;border-right-width: 
-    1px;border-top-color: #000000;border-top-style: solid;border-top-width: 1px;font-size: Nonepx;font-weight: 
-    bold;height: 19pt;text-align: center">PR开启天数</td> <td id="open_pull_requests_statistics!G1" 
-    style="border-bottom-color: #000000;border-bottom-style: solid;border-bottom-width: 1px;border-collapse: 
-    collapse;border-left-color: #000000;border-left-style: solid;border-left-width: 1px;border-right-color: 
-    #000000;border-right-style: solid;border-right-width: 1px;border-top-color: #000000;border-top-style: 
-    solid;border-top-width: 1px;font-size: Nonepx;font-weight: bold;height: 19pt;text-align: center">审查者</td> </tr> 
-    <tr> <td id="open_pull_requests_statistics!A2" rowspan="20" style="border-bottom-color: 
-    #000000;border-bottom-style: solid;border-bottom-width: 1px;border-collapse: collapse;border-left-color: 
-    #000000;border-left-style: solid;border-left-width: 1px;border-right-color: #000000;border-right-style: 
-    solid;border-right-width: 1px;border-top-color: #000000;border-top-style: solid;border-top-width: 1px;font-size: 
-    11.0px;height: 19pt;text-align: center">{0}</td> <td id="open_pull_requests_statistics!B2" 
-    style="border-bottom-color: #000000;border-bottom-style: solid;border-bottom-width: 1px;border-collapse: 
-    collapse;border-left-color: #000000;border-left-style: solid;border-left-width: 1px;border-right-color: 
-    #000000;border-right-style: solid;border-right-width: 1px;border-top-color: #000000;border-top-style: 
-    solid;border-top-width: 1px;font-size: 11.0px;height: 19pt">{1}</td> <td id="open_pull_requests_statistics!C2" 
-    style="border-bottom-color: #000000;border-bottom-style: solid;border-bottom-width: 1px;border-collapse: 
-    collapse;border-left-color: #000000;border-left-style: solid;border-left-width: 1px;border-right-color: 
-    #000000;border-right-style: solid;border-right-width: 1px;border-top-color: #000000;border-top-style: 
-    solid;border-top-width: 1px;font-size: 11.0px;height: 19pt">{2}</td> <td id="open_pull_requests_statistics!D2" 
-    style="border-bottom-color: #000000;border-bottom-style: solid;border-bottom-width: 1px;border-collapse: 
-    collapse;border-left-color: #000000;border-left-style: solid;border-left-width: 1px;border-right-color: 
-    #000000;border-right-style: solid;border-right-width: 1px;border-top-color: #000000;border-top-style: 
-    solid;border-top-width: 1px;font-size: 11.0px;height: 19pt">{3}</td> <td id="open_pull_requests_statistics!E2" 
-    style="border-bottom-color: #000000;border-bottom-style: solid;border-bottom-width: 1px;border-collapse: 
-    collapse;border-left-color: #000000;border-left-style: solid;border-left-width: 1px;border-right-color: 
-    #000000;border-right-style: solid;border-right-width: 1px;border-top-color: #000000;border-top-style: 
-    solid;border-top-width: 1px;font-size: 11.0px;height: 19pt;text-align: center">{4}</td> <td 
-    id="open_pull_requests_statistics!F2" style="border-bottom-color: #000000;border-bottom-style: 
-    solid;border-bottom-width: 1px;border-collapse: collapse;border-left-color: #000000;border-left-style: 
-    solid;border-left-width: 1px;border-right-color: #000000;border-right-style: solid;border-right-width: 
-    1px;border-top-color: #000000;border-top-style: solid;border-top-width: 1px;font-size: 11.0px;height: 
-    19pt;text-align: center">{5}</td> <td id="open_pull_requests_statistics!G2" style="border-bottom-color: 
-    #000000;border-bottom-style: solid;border-bottom-width: 1px;border-collapse: collapse;border-left-color: 
-    #000000;border-left-style: solid;border-left-width: 1px;border-right-color: #000000;border-right-style: 
-    solid;border-right-width: 1px;border-top-color: #000000;border-top-style: solid;border-top-width: 1px;font-size: 
-    11.0px;height: 19pt">{6}</td> </tr> </table> </body> </html>
-    """.format(sig, repo, ref, link, status, duration, reviewers.replace('"', ''))
-    f2 = open(html_file, 'w', encoding='utf-8')
-    f2.write(template)
-    f2.close()
-
-
-def excel_optimization(filepath, items_count):
+def excel_optimization(filepath):
     """
     Adjust styles of the xlsx file
     :param filepath: path of the xlsx file
-    :param items_count: count of the raws without the first row
     """
     if not filepath.endswith('.xlsx'):
         return
+    html_file = filepath.replace('.xlsx', '.html')
     wb = openpyxl.load_workbook(filepath)
     ws = wb.active
+    tmp_list = []
+    for row in ws.rows:
+        tmp_list.append(row[1].value)
+    insert_rows = {}
+    for i in tmp_list:
+        if i not in insert_rows.keys():
+            insert_row = tmp_list.index(i) + 1
+            insert_rows[insert_row] = i
+    # delete auxiliary column
+    ws.delete_cols(1)
+    ws.delete_cols(1)
+    # insert rows
+    alignment_center = Alignment(horizontal='center', vertical='center')
+    insert_count = 0
+    for i in sorted(insert_rows.keys()):
+        sig_name = insert_rows[i]
+        i += insert_count
+        ws.insert_rows(i)
+        insert_count += 1
+        ws['A' + str(i)] = '仓库'
+        ws['B' + str(i)] = '目标分支'
+        ws['C' + str(i)] = '编号'
+        ws['D' + str(i)] = '标题'
+        ws['E' + str(i)] = '状态'
+        ws['F' + str(i)] = '开启天数'
+        ws['A' + str(i)].font = Font(bold=True)
+        ws['A' + str(i)].alignment = alignment_center
+        ws['B' + str(i)].font = Font(bold=True)
+        ws['B' + str(i)].alignment = alignment_center
+        ws['C' + str(i)].font = Font(bold=True)
+        ws['C' + str(i)].alignment = alignment_center
+        ws['D' + str(i)].font = Font(bold=True)
+        ws['D' + str(i)].alignment = alignment_center
+        ws['E' + str(i)].font = Font(bold=True)
+        ws['E' + str(i)].alignment = alignment_center
+        ws['F' + str(i)].font = Font(bold=True)
+        ws['F' + str(i)].alignment = alignment_center
+        ws.insert_rows(i)
+        insert_count += 1
+        ws['A' + str(i)] = sig_name
+        ws['A' + str(i)].font = Font(name='黑体', size=20, bold=True)
+        ws.merge_cells(start_row=i, end_row=i, start_column=1, end_column=6)
+        ws['A' + str(i)].alignment = alignment_center
+    # replace the original table header
+    ws.insert_rows(4)
+    ws['A4'] = ws['A3'].value
+    ws['B4'] = ws['B3'].value
+    ws['C4'] = ws['C3'].value
+    ws['D4'] = ws['D3'].value
+    ws['E4'] = ws['E3'].value
+    ws['F4'] = ws['F3'].value
+    ws.delete_rows(3)
+    # fill for the Duration
+    cells = ws.iter_rows(min_row=2, min_col=6, max_col=6)
+    yellow_fill = PatternFill("solid", start_color='FFFF00')
+    first_stage_fill = PatternFill('solid', start_color='FFDAB9')
+    second_stage_fill = PatternFill('solid', start_color='FF7F50')
+    third_stage_fill = PatternFill('solid', start_color='FF4500')
+    for i in cells:
+        try:
+            value = int(i[0].value)
+            if 7 < value <= 30:
+                i[0].fill = first_stage_fill
+            elif 30 < value <= 365:
+                i[0].fill = second_stage_fill
+            elif value > 365:
+                i[0].fill = third_stage_fill
+        except (TypeError, ValueError):
+            pass
+    # fill for the status mark
+    status = ws.iter_rows(min_row=2, min_col=5, max_col=5)
+    for j in status:
+        value = j[0].value
+        if value == '' or value == '状态':
+            continue
+        if value != '待合入':
+            j[0].fill = yellow_fill
+    # align center
+    for row in ws.rows:
+        row[5].alignment = alignment_center
     # add borders
     border = Border(left=Side(border_style='thin', color='000000'),
                     right=Side(border_style='thin', color='000000'),
@@ -350,78 +352,33 @@ def excel_optimization(filepath, items_count):
     for row in ws.rows:
         for cell in row:
             cell.border = border
-    # align center
-    alignment_center = Alignment(horizontal='center', vertical='center')
-    for row in ws.rows:
-        row[1].alignment = alignment_center
-        row[5].alignment = alignment_center
-        row[6].alignment = alignment_center
-    # fill for the Duration
-    cells = ws.iter_rows(min_row=2, min_col=7, max_col=7)
-    yellow_fill = PatternFill("solid", start_color='FFFF00')
-    first_stage_fill = PatternFill('solid', start_color='FFDAB9')
-    second_stage_fill = PatternFill('solid', start_color='FF7F50')
-    third_stage_fill = PatternFill('solid', start_color='FF4500')
-    for i in cells:
-        value = int(i[0].value)
-        if 7 < value <= 30:
-            i[0].fill = first_stage_fill
-        elif 30 < value <= 365:
-            i[0].fill = second_stage_fill
-        elif value > 365:
-            i[0].fill = third_stage_fill
-    # fill for the status mark
-    status = ws.iter_rows(min_row=2, min_col=6, max_col=6)
-    for j in status:
-        value = j[0].value
-        if value != '待合入':
-            j[0].fill = yellow_fill
-    # merge cells
-    ws.merge_cells(start_row=2, end_row=items_count + 1, start_column=1, end_column=1)
-    # delete auxiliary column
-    ws.delete_cols(1)
     wb.save(filepath)
     wb.close()
     # generate html file by the xlsx file
-    html_file = filepath.replace('.xlsx', '.html')
-    if items_count > 1:
-        xlsx2html(filepath, html_file)
-    else:
-        generate_one_row_table(filepath)
+    xlsx2html(filepath, html_file)
     log.logger.info('Generate {}'.format(html_file))
 
 
-def send_email(sig, xlsx_file, receivers, host, port, username, password):
+def send_email(xlsx_file, receivers):
     """
     Send email to reviewers
-    :param sig: sig name
     :param xlsx_file: path of the xlsx file
     :param receivers: where send to
-    :param host: SMTP host
-    :param port: SMTP port
-    :param username: SMTP username
-    :param password: SMTP password
     """
+    username = os.getenv('SMTP_USERNAME', '')
+    port = os.getenv('SMTP_PORT', '')
+    host = os.getenv('SMTP_HOST', '')
+    password = os.getenv('SMTP_PASSWORD', '')
     msg = MIMEMultipart()
-    if sig:
-        html_file = xlsx_file.replace('.xlsx', '.html')
-        with open(html_file, 'r', encoding='utf-8') as f:
-            body_of_email = f.read()
-        body_of_email = body_of_email.replace('<body>',
-                                              '<body><p>下表是SIG {} 所有开启PR的统计，请相关审查者及时跟进</p>'.format(sig)). \
-            replace('&nbsp;', '0')
-        content = MIMEText(body_of_email, 'html', 'utf-8')
-        msg.attach(content)
-        msg['Subject'] = '{}的PR汇总'.format(sig)
-    else:
-        body_of_email = '各SIG的PR处理情况统计见附件'
-        content = MIMEText(body_of_email, 'plain', 'utf-8')
-        msg.attach(content)
-        file = MIMEApplication(open(xlsx_file, 'rb').read())
-        file.add_header('Content-Disposition', 'attachment', filename=xlsx_file)
-        msg.attach(file)
-        msg['Subject'] = '各SIG的PR处理情况统计'
-
+    html_file = xlsx_file.replace('.xlsx', '.html')
+    with open(html_file, 'r', encoding='utf-8') as f:
+        body_of_email = f.read()
+    body_of_email = body_of_email.replace('<body>', '<body><p>Dear Maintainer or Committer,</p>'
+                                                    '<p>以下是openEuler社区您参与的SIG仓库下待处理的PR，烦请您及时跟进</p>').\
+        replace('&nbsp;', '0')
+    content = MIMEText(body_of_email, 'html', 'utf-8')
+    msg.attach(content)
+    msg['Subject'] = 'openEuler 待处理PR汇总'
     msg['From'] = username
     msg['To'] = ','.join(receivers)
     try:
@@ -430,7 +387,7 @@ def send_email(sig, xlsx_file, receivers, host, port, username, password):
         server.starttls()
         server.login(username, password)
         server.sendmail(username, receivers, msg.as_string())
-        log.logger.info('Sent report email to {}, receivers: {}'.format(sig, receivers))
+        log.logger.info('Sent report email to: {}'.format(receivers))
     except smtplib.SMTPException as e:
         log.logger.error(e)
         sys.exit(1)
@@ -461,9 +418,6 @@ def clean_env(data_dir):
 def get_repos_pulls_mapping():
     """
     Get mappings between repos and pulls
-    :param token: access token
-    :param page: the first page
-    :param enterprise_pulls: a list to store pulls
     :return: a dict of {repo: pulls}
     """
     enterprise_pulls = []
@@ -495,12 +449,10 @@ def pr_statistics(data_dir, sigs, repos_pulls_mapping):
     :param sigs: a dict of every sig and its repositories
     :param repos_pulls_mapping: mappings between repos and pulls
     """
-    username = os.getenv('SMTP_USERNAME', '')
-    port = os.getenv('SMTP_PORT', '')
-    host = os.getenv('SMTP_HOST', '')
-    password = os.getenv('SMTP_PASSWORD', '')
     log.logger.info('=' * 25 + ' STATISTICS ' + '=' * 25)
     email_mappings = get_email_mappings()
+    mapping_lists = sorted(list(email_mappings.keys()))
+    open_pr_dict = {}
     open_pr_info = []
     for sig in sigs:
         sig_name = sig['name']
@@ -509,14 +461,7 @@ def pr_statistics(data_dir, sigs, repos_pulls_mapping):
         if not sig_repos:
             log.logger.info('Find no repositories in sig {}, skip'.format(sig_name))
             continue
-        statistics_csv = '{}/statistics_{}.csv'.format(data_dir, sig_name)
-        f = codecs.open(statistics_csv, 'w', encoding='utf-8')
-        writer = csv.writer(f)
-        writer.writerow(['SIG组', '仓库', '目标分支', 'PR链接', 'PR状态', 'PR开启天数', '审查者'])
         maintainers, sig_info_mark = get_maintainers(sig_name)
-        receivers = []
-        receivers_addrs = []
-        open_pr_count = 0
         for full_repo in sig_repos:
             if full_repo.split('/')[0] not in ['src-openeuler', 'openeuler']:
                 continue
@@ -531,11 +476,10 @@ def pr_statistics(data_dir, sigs, repos_pulls_mapping):
             if sig_info_mark:
                 committers_mapping = get_committers_mapping(sig_name)
                 members = get_repo_members(maintainers, committers_mapping, full_repo)
-            for member in members:
-                if member not in receivers:
-                    receivers.append(member)
             for item in open_pr_list:
-                link = item['link']
+                title = item['title']
+                html_url = item['link']
+                number = '#' + html_url.split('/')[-1]
                 created_at = item['created_at']
                 draft = item['draft']
                 labels = item['labels'].split(',')
@@ -552,30 +496,54 @@ def pr_statistics(data_dir, sigs, repos_pulls_mapping):
                 if 'kind/wait_for_update' in labels:
                     status = fill_status(status, '等待更新')
                 duration = count_duration(created_at)
-                open_pr_info.append([sig_name, full_repo, ref_branch, link, status, duration, ','.join(members)])
-                link = "<a href='{0}'>{0}</a>".format(link)
-                new_members = ["<a href='https://gitee.com/{0}'>{0}</a>".format(x) for x in members]
-                writer.writerow([sig_name, full_repo, ref_branch, link, status, duration, ','.join(new_members)])
-                open_pr_count += 1
+                link = "<a href='{0}'>{1}</a>".format(html_url, title)
+                number_link = "<a href='{0}'>{1}</a>".format(html_url, number)
+                open_pr_info.append([sig_name, full_repo, ref_branch, number_link, link, status, duration,
+                                     ','.join(members)])
+    no_addresses_id = []
+    for pr_info in open_pr_info:
+        ids = pr_info[-1]
+        for i in ids.split(','):
+            if i not in mapping_lists:
+                if i not in no_addresses_id:
+                    log.logger.warning('WARNING! gitee_id {} does not match any email address.'.format(i))
+                    no_addresses_id.append(i)
+            if i not in open_pr_dict.keys():
+                open_pr_dict[i] = [pr_info[:-1]]
+            else:
+                open_pr_dict[i].append(pr_info[:-1])
+    for receiver in sorted(list(open_pr_dict.keys())):
+        origin_pr_list = sorted(open_pr_dict[receiver], key=(lambda x: int(x[6])), reverse=True)
+        ordered_pr_list = []
+        pr_sigs = sorted(set([x[0] for x in origin_pr_list]))
+        for pr_sig in pr_sigs:
+            for op in origin_pr_list:
+                if op[0] == pr_sig:
+                    if len(ordered_pr_list) > 0 and op[0] == ordered_pr_list[-1][0] and int(op[-1]) > \
+                            int(ordered_pr_list[-1][-1]):
+                        ordered_pr_list.insert(-1, op)
+                    else:
+                        ordered_pr_list.append(op)
+        statistics_csv = '{}/statistics_{}.csv'.format(data_dir, receiver)
+        f = codecs.open(statistics_csv, 'w', encoding='utf-8')
+        writer = csv.writer(f)
+        for i in ordered_pr_list:
+            writer.writerow(i)
         f.close()
-        for receiver in receivers:
-            email_address = email_mappings[receiver]
-            if email_address and email_address not in receivers_addrs:
-                receivers_addrs.append(email_address)
-        if receivers_addrs:
-            log.logger.info('Ready to send to {}, email addresses: {}'.format(sig_name, receivers_addrs))
-            statistics_xlsx = csv_to_xlsx(statistics_csv)
-            excel_optimization(statistics_xlsx, open_pr_count)
-            send_email(sig_name, statistics_xlsx, receivers_addrs, host, port, username, password)
-        else:
-            log.logger.warning('Find these receivers all has no email addresses: {}'.format(receivers))
+        email_address = email_mappings.get(receiver)
+        if not email_address:
+            log.logger.warning('Ready to send statistics for {} but cannot find the email address'.format(receiver))
+            continue
+        log.logger.info('Ready to send statistics for {} whose email address is {}'.format(receiver, email_address))
+        statistics_xlsx = csv_to_xlsx(statistics_csv)
+        excel_optimization(statistics_xlsx)
+        send_email(statistics_xlsx, [email_address])
 
 
 def main():
     """
     main function
     """
-    token = os.getenv('AccessToken', '')
     data_dir = prepare_env()
     sigs = get_sigs()
     repos_pulls_mapping = get_repos_pulls_mapping()
