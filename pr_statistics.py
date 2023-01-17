@@ -359,10 +359,11 @@ def excel_optimization(filepath):
     log.logger.info('Generate {}'.format(html_file))
 
 
-def send_email(xlsx_file, receivers):
+def send_email(xlsx_file, nickname, receivers):
     """
     Send email to reviewers
     :param xlsx_file: path of the xlsx file
+    :param nickname: Gitee ID of the receiver
     :param receivers: where send to
     """
     username = os.getenv('SMTP_USERNAME', '')
@@ -373,9 +374,9 @@ def send_email(xlsx_file, receivers):
     html_file = xlsx_file.replace('.xlsx', '.html')
     with open(html_file, 'r', encoding='utf-8') as f:
         body_of_email = f.read()
-    body_of_email = body_of_email.replace('<body>', '<body><p>Dear Maintainer or Committer,</p>'
-                                                    '<p>以下是openEuler社区您参与的SIG仓库下待处理的PR，烦请您及时跟进</p>').\
-        replace('&nbsp;', '0')
+    body_of_email = body_of_email.replace('<body>', '<body><p>Dear {},</p>'
+                                                    '<p>以下是您参与openEuler社区的SIG仓库下待处理的PR，烦请您及时跟进</p>'.
+                                          format(nickname)).replace('&nbsp;', '0')
     content = MIMEText(body_of_email, 'html', 'utf-8')
     msg.attach(content)
     msg['Subject'] = 'openEuler 待处理PR汇总'
@@ -537,7 +538,7 @@ def pr_statistics(data_dir, sigs, repos_pulls_mapping):
         log.logger.info('Ready to send statistics for {} whose email address is {}'.format(receiver, email_address))
         statistics_xlsx = csv_to_xlsx(statistics_csv)
         excel_optimization(statistics_xlsx)
-        send_email(statistics_xlsx, [email_address])
+        send_email(statistics_xlsx, receiver, [email_address])
 
 
 def main():
