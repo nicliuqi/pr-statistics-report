@@ -391,7 +391,6 @@ def send_email(xlsx_file, nickname, receivers):
         log.logger.info('Sent report email to: {}'.format(receivers))
     except smtplib.SMTPException as e:
         log.logger.error(e)
-        sys.exit(1)
 
 
 def fill_status(status, insert_string):
