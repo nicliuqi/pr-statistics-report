@@ -1,9 +1,8 @@
-FROM openeuler/openeuler:21.03
+FROM openeuler/openeuler:22.03-lts
 
 MAINTAINER liuqi<469227928@qq.com>
 
-RUN yum update && \
-yum install -y python3-pip git
+RUN yum install -y python3-pip git
 
 RUN pip3 install requests openpyxl pandas PyYAML xlsx2html
 
