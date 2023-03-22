@@ -9,6 +9,7 @@ import requests
 import smtplib
 import subprocess
 import sys
+import time
 import yaml
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -71,11 +72,13 @@ def get_sigs():
     log.logger.info('=' * 25 + ' GET SIGS INFO ' + '=' * 25)
     sig_path = os.path.join('community', 'sig')
     sigs = []
+    sigs_list = []
     for i in sorted(os.listdir(sig_path)):
         if i in ['README.md', 'sig-template', 'sig-recycle', 'create_sig_info_template.py']:
             continue
         if i not in [x['name'] for x in sigs]:
             sigs.append({'name': i, 'repositories': []})
+            sigs_list.append(i)
         if 'openeuler' in os.listdir(os.path.join(sig_path, i)):
             for filesdir, _, repos in os.walk(os.path.join(sig_path, i, 'openeuler')):
                 for repo in repos:
@@ -91,7 +94,7 @@ def get_sigs():
                             repositories = sig['repositories']
                             repositories.append(os.path.join('src-openeuler', src_repo.split('.yaml')[0]))
     log.logger.info('Get sigs info.\n')
-    return sigs
+    return sigs, sigs_list
 
 
 def get_maintainers(sig):
@@ -254,10 +257,95 @@ def csv_to_xlsx(filepath):
     return xlsx_filepath
 
 
-def excel_optimization(filepath):
+def cal_sig_processed_rate(sig_name, ts):
+    """
+    Calculate processed rate of Pull Requests of a sig between now and a week ago
+    :param sig_name: sig name
+    :param ts: timestamp
+    :return: -1, 0 or a two bit float number
+    """
+    url = 'https://dsapi.osinfra.cn/query/sig/pr/state'
+    params = {
+        'community': 'openeuler',
+        'timestamp': ts,
+        'sig': sig_name
+    }
+    r = requests.get(url, params=params)
+    if r.status_code != 200:
+        processed_rate = -1
+    else:
+        data = r.json()['data']
+        if not data:
+            return -1
+        merged, closed, op = data['merged'], data['closed'], data['open']
+        if merged == 0 and closed == 0 and op == 0:
+            return 0
+        processed_rate = round((merged + closed) / (merged + closed + op), 2)
+    return processed_rate
+
+
+def cal_compare_timestamp():
+    """
+    Calculate timestamp at 9:00 on the current day and timestamp a week ago
+    :return: timestamp at 9:00 on the current day and timestamp a week ago
+    """
+    from datetime import datetime
+    today = datetime.strftime(datetime.today(), '%Y-%m-%d')
+    timestamp_today = int(time.mktime(datetime.strptime(today + ' 09', '%Y-%m-%d %H').timetuple())) * 1000
+    timestamp_last = timestamp_today - 3600 * 24 * 7 * 1000
+    return timestamp_today, timestamp_last
+
+
+def all_sigs_compare(sigs_list):
+    """
+    Generate compare info of all sigs
+    :param sigs_list: a name list of all sigs
+    :return: compare info of all sigs
+    """
+    compare_dict = {}
+    for sig in sigs_list:
+        compare_info = compare_sig_processed_rate(sig)
+        compare_dict[sig] = compare_info
+    return compare_dict
+
+
+def single_sig_compare(sig, compare_dict):
+    """
+    Return compare info of a sig
+    :param sig: sig name
+    :param compare_dict: a dict of every sig and its compare info
+    :return: compare info of a sig
+    """
+    return compare_dict.get(sig)
+
+
+def compare_sig_processed_rate(sig_name):
+    """
+    Compare processed rate of a sig
+    :param sig_name: sig name
+    :return: compare info
+    """
+    ts_today, ts_last = cal_compare_timestamp()
+    processed_rate_now = cal_sig_processed_rate(sig_name, ts_today)
+    processed_rate_last = cal_sig_processed_rate(sig_name, ts_last)
+    if processed_rate_now == -1 or processed_rate_last == -1:
+        return ""
+    else:
+        if processed_rate_now == processed_rate_last:
+            return 'PR处理率为{}%, 同比上周不变'.format(processed_rate_now * 100)
+        elif processed_rate_now > processed_rate_last:
+            compare_rate = round(processed_rate_now - processed_rate_last, 2)
+            return 'PR处理率为{}%, 同比上周上升{}%'.format(processed_rate_now * 100, compare_rate * 100)
+        elif processed_rate_now < processed_rate_last:
+            compare_rate = round(processed_rate_last - processed_rate_now, 2)
+            return 'PR处理率为{}%, 同比上周下降{}%'.format(processed_rate_now * 100, compare_rate * 100)
+
+
+def excel_optimization(filepath, compare_dict):
     """
     Adjust styles of the xlsx file
     :param filepath: path of the xlsx file
+    :param compare_dict: a dict of every sig and its compare info
     """
     if not filepath.endswith('.xlsx'):
         return
@@ -281,43 +369,54 @@ def excel_optimization(filepath):
     for i in sorted(insert_rows.keys()):
         sig_name = insert_rows[i]
         i += insert_count
-        ws.insert_rows(i)
-        insert_count += 1
-        ws['A' + str(i)] = '仓库'
-        ws['B' + str(i)] = '目标分支'
-        ws['C' + str(i)] = '编号'
-        ws['D' + str(i)] = '标题'
-        ws['E' + str(i)] = '状态'
-        ws['F' + str(i)] = '开启天数'
-        ws['A' + str(i)].font = Font(bold=True)
-        ws['A' + str(i)].alignment = alignment_center
-        ws['B' + str(i)].font = Font(bold=True)
-        ws['B' + str(i)].alignment = alignment_center
-        ws['C' + str(i)].font = Font(bold=True)
-        ws['C' + str(i)].alignment = alignment_center
-        ws['D' + str(i)].font = Font(bold=True)
-        ws['D' + str(i)].alignment = alignment_center
-        ws['E' + str(i)].font = Font(bold=True)
-        ws['E' + str(i)].alignment = alignment_center
-        ws['F' + str(i)].font = Font(bold=True)
-        ws['F' + str(i)].alignment = alignment_center
+
         ws.insert_rows(i)
         insert_count += 1
         ws['A' + str(i)] = sig_name
         ws['A' + str(i)].font = Font(name='黑体', size=20, bold=True)
         ws.merge_cells(start_row=i, end_row=i, start_column=1, end_column=6)
         ws['A' + str(i)].alignment = alignment_center
+
+        compare_info = single_sig_compare(sig_name, compare_dict)
+        ws.insert_rows(i + 1)
+        insert_count += 1
+        ws['A' + str(i + 1)] = compare_info
+        ws['A' + str(i + 1)].font = Font(name='黑体', color='FF0000')
+        ws['A' + str(i + 1)].alignment = alignment_center
+        ws.merge_cells(start_row=i + 1, end_row=i + 1, start_column=1, end_column=6)
+
+        ws.insert_rows(i + 2)
+        insert_count += 1
+        ws['A' + str(i + 2)] = '仓库'
+        ws['B' + str(i + 2)] = '目标分支'
+        ws['C' + str(i + 2)] = '编号'
+        ws['D' + str(i + 2)] = '标题'
+        ws['E' + str(i + 2)] = '状态'
+        ws['F' + str(i + 2)] = '开启天数'
+        ws['A' + str(i + 2)].font = Font(bold=True)
+        ws['A' + str(i + 2)].alignment = alignment_center
+        ws['B' + str(i + 2)].font = Font(bold=True)
+        ws['B' + str(i + 2)].alignment = alignment_center
+        ws['C' + str(i + 2)].font = Font(bold=True)
+        ws['C' + str(i + 2)].alignment = alignment_center
+        ws['D' + str(i + 2)].font = Font(bold=True)
+        ws['D' + str(i + 2)].alignment = alignment_center
+        ws['E' + str(i + 2)].font = Font(bold=True)
+        ws['E' + str(i + 2)].alignment = alignment_center
+        ws['F' + str(i + 2)].font = Font(bold=True)
+        ws['F' + str(i + 2)].alignment = alignment_center
+
     # replace the original table header
-    ws.insert_rows(4)
-    ws['A4'] = ws['A3'].value
-    ws['B4'] = ws['B3'].value
-    ws['C4'] = ws['C3'].value
-    ws['D4'] = ws['D3'].value
-    ws['E4'] = ws['E3'].value
-    ws['F4'] = ws['F3'].value
-    ws.delete_rows(3)
+    ws.insert_rows(5)
+    ws['A5'] = ws['A4'].value
+    ws['B5'] = ws['B4'].value
+    ws['C5'] = ws['C4'].value
+    ws['D5'] = ws['D4'].value
+    ws['E5'] = ws['E4'].value
+    ws['F5'] = ws['F4'].value
+    ws.delete_rows(4)
     # fill for the Duration
-    cells = ws.iter_rows(min_row=2, min_col=6, max_col=6)
+    cells = ws.iter_rows(min_row=3, min_col=6, max_col=6)
     yellow_fill = PatternFill("solid", start_color='FFFF00')
     first_stage_fill = PatternFill('solid', start_color='FFDAB9')
     second_stage_fill = PatternFill('solid', start_color='FF7F50')
@@ -334,12 +433,14 @@ def excel_optimization(filepath):
         except (TypeError, ValueError):
             pass
     # fill for the status mark
-    status = ws.iter_rows(min_row=2, min_col=5, max_col=5)
+    status = ws.iter_rows(min_row=3, min_col=5, max_col=5)
     for j in status:
         value = j[0].value
-        if value == '' or value == '状态':
+        if not value:
             continue
-        if value != '待合入':
+        elif len(value) <= 3 and value != '草稿':
+            continue
+        else:
             j[0].fill = yellow_fill
     # align center
     for row in ws.rows:
@@ -443,11 +544,12 @@ def get_repos_pulls_mapping():
     return {x['link'].split('/', 3)[3]: x for x in enterprise_pulls}
 
 
-def pr_statistics(data_dir, sigs, repos_pulls_mapping):
+def pr_statistics(data_dir, sigs, repos_pulls_mapping, compare_dict):
     """
     :param data_dir: directory to store temporary data
     :param sigs: a dict of every sig and its repositories
     :param repos_pulls_mapping: mappings between repos and pulls
+    :param compare_dict: a dict of every sig and its compare info
     """
     log.logger.info('=' * 25 + ' STATISTICS ' + '=' * 25)
     email_mappings = get_email_mappings()
@@ -536,7 +638,7 @@ def pr_statistics(data_dir, sigs, repos_pulls_mapping):
             continue
         log.logger.info('Ready to send statistics for {} whose email address is {}'.format(receiver, email_address))
         statistics_xlsx = csv_to_xlsx(statistics_csv)
-        excel_optimization(statistics_xlsx)
+        excel_optimization(statistics_xlsx, compare_dict)
         send_email(statistics_xlsx, receiver, [email_address])
 
 
@@ -545,9 +647,11 @@ def main():
     main function
     """
     data_dir = prepare_env()
-    sigs = get_sigs()
+    sigs, sigs_list = get_sigs()
+    compare_dict = all_sigs_compare(sigs_list)
+    print('Compare Dict: {}'.format(compare_dict))
     repos_pulls_mapping = get_repos_pulls_mapping()
-    pr_statistics(data_dir, sigs, repos_pulls_mapping)
+    pr_statistics(data_dir, sigs, repos_pulls_mapping, compare_dict)
 
 
 if __name__ == '__main__':
