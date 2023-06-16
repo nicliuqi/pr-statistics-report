@@ -484,10 +484,15 @@ def send_email(xlsx_file, nickname, receivers):
     msg['From'] = username
     msg['To'] = ','.join(receivers)
     try:
-        server = smtplib.SMTP(host, port)
-        server.ehlo()
-        server.starttls()
-        server.login(username, password)
+        if int(port) == 465:
+            server = smtplib.SMTP_SSL(host, port)
+            server.ehlo()
+            server.login(username, password)
+        else:
+            server = smtplib.SMTP(host, port)
+            server.ehlo()
+            server.starttls()
+            server.login(username, password)
         server.sendmail(username, receivers, msg.as_string())
         log.logger.info('Sent report email to: {}'.format(receivers))
     except smtplib.SMTPException as e:
