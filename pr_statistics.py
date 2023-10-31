@@ -127,10 +127,12 @@ def get_committers_mapping(sig):
     """
     sig_info_file = os.path.join('community', 'sig', sig, 'sig-info.yaml')
     if not os.path.exists(sig_info_file):
-        return []
+        return {}
     with open(sig_info_file, 'r', encoding='utf-8') as f:
         sig_info = yaml.load(f.read(), Loader=yaml.Loader)
-    repositories = sig_info['repositories']
+    repositories = sig_info.get('repositories')
+    if not repositories:
+        return {}
     committers_mapping = {}
     for i in repositories:
         if 'committers' in i.keys():
