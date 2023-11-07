@@ -473,6 +473,7 @@ def send_email(xlsx_file, nickname, receivers):
     port = os.getenv('SMTP_PORT', '')
     host = os.getenv('SMTP_HOST', '')
     password = os.getenv('SMTP_PASSWORD', '')
+    sender = os.getenv('SMTP_SENDER')
     msg = MIMEMultipart()
     html_file = xlsx_file.replace('.xlsx', '.html')
     with open(html_file, 'r', encoding='utf-8') as f:
@@ -495,7 +496,7 @@ def send_email(xlsx_file, nickname, receivers):
             server.ehlo()
             server.starttls()
             server.login(username, password)
-        server.sendmail(username, receivers, msg.as_string())
+        server.sendmail(sender, receivers, msg.as_string())
         log.logger.info('Sent report email to: {}'.format(receivers))
     except smtplib.SMTPException as e:
         log.logger.error(e)
