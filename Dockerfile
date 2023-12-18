@@ -4,7 +4,7 @@ MAINTAINER liuqi<469227928@qq.com>
 
 RUN yum install -y python3-pip git
 
-RUN pip3 install requests openpyxl pandas PyYAML xlsx2html
+RUN pip3 install requests openpyxl pandas PyYAML xlsx2html -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 WORKDIR /work/pr-statistics
 
