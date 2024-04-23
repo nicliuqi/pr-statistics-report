@@ -484,7 +484,7 @@ def send_email(xlsx_file, nickname, receivers):
     content = MIMEText(body_of_email, 'html', 'utf-8')
     msg.attach(content)
     msg['Subject'] = 'openEuler 待处理PR汇总'
-    msg['From'] = username
+    msg['From'] = sender
     msg['To'] = ','.join(receivers)
     try:
         if int(port) == 465:
