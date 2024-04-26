@@ -143,17 +143,28 @@ def get_committers_mapping(sig):
     return committers_mapping
 
 
-def get_repo_members(maintainers, committers_mapping, repo):
+def get_repo_members(maintainers, committers_mapping, repo, sig, extra_sig):
     """
     Get reviewers of a repo
     :param maintainers: maintainers of the sig
     :param committers_mapping: mappings between repos and committers
     :param repo: full name of repo
+    :param sig: the sig of the repo
+    :param extra_sig: a list of sigs combine maintainers and committers
     :return: reviewers
     """
-    if repo not in committers_mapping.keys():
-        return maintainers
-    reviewers = committers_mapping[repo]
+    if sig not in extra_sig:
+        if repo not in committers_mapping.keys():
+            return maintainers
+        reviewers = committers_mapping.get(repo)
+        return reviewers
+    reviewers = maintainers
+    committers = committers_mapping.get(repo)
+    if not committers:
+        return reviewers
+    for committer in committers:
+        if committer not in reviewers:
+            reviewers.append(committer)
     return reviewers
 
 
@@ -564,6 +575,7 @@ def pr_statistics(data_dir, sigs, repos_pulls_mapping, compare_dict):
     mapping_lists = sorted(list(email_mappings.keys()))
     open_pr_dict = {}
     open_pr_info = []
+    extra_sig = yaml.safe_load(open('need_review.yaml', 'r').read())
     for sig in sigs:
         sig_name = sig['name']
         sig_repos = sig['repositories']
@@ -585,7 +597,7 @@ def pr_statistics(data_dir, sigs, repos_pulls_mapping, compare_dict):
             members = maintainers
             if sig_info_mark:
                 committers_mapping = get_committers_mapping(sig_name)
-                members = get_repo_members(maintainers, committers_mapping, full_repo)
+                members = get_repo_members(maintainers, committers_mapping, full_repo, sig_name, extra_sig)
             for item in open_pr_list:
                 title = item['title']
                 html_url = item['link']

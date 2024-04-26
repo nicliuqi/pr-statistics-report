@@ -8,6 +8,8 @@ RUN pip3 install requests openpyxl pandas PyYAML xlsx2html -i https://pypi.tuna.
 
 WORKDIR /work/pr-statistics
 
-COPY pr_statistics.py /work/pr-statistics
+COPY . /work/pr-statistics
+
+ENV TZ=Asia/Shanghai
 
 ENTRYPOINT ["python3", "pr_statistics.py"] 
