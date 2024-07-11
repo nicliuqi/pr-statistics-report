@@ -11,111 +11,62 @@ def get_open_pulls():
     page = 1
     while True:
         log.logger.info("=" * 25 + " GET ENTERPRISE PULLS: PAGE {} ".format(page) + "=" * 25)
-        url = 'https://quickissue.openeuler.org/api-issues/pulls'
+        url = 'https://gitee.com/api/v5/repos/openeuler/community/pulls'
         params = {
             'state': 'open',
+            'sort': 'created',
             'direction': 'asc',
             'page': page,
             'per_page': 100,
-            'repo': 'openeuler/community'
+            'access_token': os.getenv('ACCESS_TOKEN')
         }
         r = requests.get(url, params=params)
         if r.status_code != 200:
             log.logger.error('Fail to get enterprise pulls list.')
             return
         else:
-            enterprise_pulls += r.json()['data']
-        if len(r.json()['data']) < 100:
+            enterprise_pulls += r.json()
+        if len(r.json()) < 100:
             break
         page += 1
-    return {x['link'].split('/', 3)[3]: x for x in enterprise_pulls}
+    return enterprise_pulls
 
 
-def get_attention_receivers():
-    """
-    Get attention receivers
-    :return: a list of receivers with gitee_id and email
-    """
-    if not os.path.exists('community'):
-        log.logger.error("Directory community is not exist")
-        return []
-    with open('community/sig/TC/sig-info.yaml', 'r') as f:
-        sig_info = yaml.safe_load(f)
-    res = []
-    for maintainer in sig_info.get('maintainers'):
-        res.append((maintainer.get('gitee_id'), maintainer.get('email')))
-
-
-def pr_statistics(data_dir, sigs, repos_pulls_mapping, compare_dict):
+def pr_statistics(data_dir, open_pr_list):
     """
     :param data_dir: directory to store temporary data
-    :param sigs: a dict of every sig and its repositories
-    :param repos_pulls_mapping: mappings between repos and pulls
-    :param compare_dict: a dict of every sig and its compare info
+    :param open_pr_list: open pull requests list
     """
     log.logger.info('=' * 25 + ' STATISTICS ' + '=' * 25)
     email_mappings = get_email_mappings()
     mapping_lists = sorted(list(email_mappings.keys()))
     open_pr_dict = {}
     open_pr_info = []
-    for sig in sigs:
-        sig_name = sig['name']
-        if sig_name != 'TC':
+    for item in open_pr_list:
+        if not item['mergeable'] or item['draft']:
             continue
-        sig_repos = sig['repositories']
-        log.logger.info('\nStarting to search sig {}'.format(sig_name))
-        if not sig_repos:
-            log.logger.info('Find no repositories in sig {}, skip'.format(sig_name))
+        title = item['title']
+        html_url = item['html_url']
+        number = '#' + html_url.split('/')[-1]
+        members = get_attention_members(html_url.split('/')[-1])
+        if not members:
             continue
-        for full_repo in sig_repos:
-            if full_repo != 'openeuler/community':
-                continue
-            open_pr_list = []
-            for mapping_key in repos_pulls_mapping.keys():
-                if mapping_key.startswith(full_repo + '/'):
-                    open_pr_list.append(repos_pulls_mapping[mapping_key])
-                    log.logger.info('Find open pr: {}'.format(mapping_key))
-            if not open_pr_list:
-                continue
-            for item in open_pr_list:
-                title = item['title']
-                html_url = item['link']
-                members_add_check, new_members_info = check_members_add(html_url)
-                if not members_add_check:
-                    continue
-                members, _ = get_maintainers('TC')
-                for i in new_members_info:
-                    new_member_sig = i.get('sig')
-                    new_member_sig_members, _ = get_maintainers(new_member_sig)
-                    for j in new_member_sig_members:
-                        if j not in members:
-                            members.append(j)
-                    for new_member in i.get('new_members'):
-                        if new_member not in members:
-                            members.append(new_member.get('gitee_id'))
-                        if not email_mappings.get(new_member.get('gitee_id')):
-                            email_mappings[new_member.get('gitee_id')] = new_member.get('email')
-                number = '#' + html_url.split('/')[-1]
-                created_at = item['created_at']
-                draft = item['draft']
-                labels = item['labels'].split(',')
-                ref_branch = item['ref']
-                status = '待合入'
-                if draft:
-                    status = fill_status(status, '草稿')
-                if 'openeuler-cla/yes' not in labels:
-                    status = fill_status(status, 'CLA认证失败')
-                if 'ci_failed' in labels:
-                    status = fill_status(status, '门禁检查失败')
-                if not item['mergeable']:
-                    status = fill_status(status, '存在冲突')
-                if 'kind/wait_for_update' in labels:
-                    status = fill_status(status, '等待更新')
-                duration = count_duration(created_at)
-                link = "<a href='{0}'>{1}</a>".format(html_url, title)
-                number_link = "<a href='{0}'>{1}</a>".format(html_url, number)
-                open_pr_info.append([sig_name, full_repo, ref_branch, number_link, link, status, duration,
-                                     ','.join(members)])
+        created_at = item['created_at'].replace('T', ' ').replace('+08:00', '')
+        labels = [x['name'] for x in item['labels']]
+        ref_branch = item['head']['ref']
+        status = '待合入'
+        if 'openeuler-cla/yes' not in labels:
+            status = fill_status(status, 'CLA认证失败')
+        if 'ci_failed' in labels:
+            status = fill_status(status, '门禁检查失败')
+        if 'kind/wait_for_update' in labels:
+            status = fill_status(status, '等待更新')
+        duration = count_duration(created_at)
+        link = "<a href='{0}'>{1}</a>".format(html_url, title)
+        number_link = "<a href='{0}'>{1}</a>".format(html_url, number)
+        open_pr_info.append(['TC', 'openeuler/community', ref_branch, number_link, link, status, duration,
+                            ','.join(members)])
+
     no_addresses_id = []
     for pr_info in open_pr_info:
         ids = pr_info[-1]
@@ -152,112 +103,8 @@ def pr_statistics(data_dir, sigs, repos_pulls_mapping, compare_dict):
             continue
         log.logger.info('Ready to send statistics for {} whose email address is {}'.format(receiver, email_address))
         statistics_xlsx = csv_to_xlsx(statistics_csv)
-        excel_optimization(statistics_xlsx, compare_dict)
+        excel_optimization(statistics_xlsx, {})
         send_email(statistics_xlsx, receiver, [email_address])
-
-
-def check_members_add(pull_link):
-    number = pull_link.split('/')[-1]
-    pwd = os.getcwd()
-    os.chdir('community')
-    subprocess.call('git fetch origin pull/{0}/head:master-{0}'.format(number), shell=True)
-    subprocess.call('git switch master-{}'.format(number), shell=True)
-    git_show_msg = subprocess.getoutput('git show')
-    change_sig_info = sig_info_change(git_show_msg)
-    if not change_sig_info:
-        subprocess.call('git checkout master', shell=True)
-        os.chdir(pwd)
-        return False, None
-    latest_commit, before_commit = get_pr_commits(pull_link)
-    if not latest_commit:
-        os.chdir(pwd)
-        return False, None
-    res = []
-    new_members_check = False
-    for change_sig_info_yaml in change_sig_info:
-        sig_info_now = yaml.safe_load(subprocess.getoutput('git show {}:{}'.format(latest_commit, change_sig_info_yaml)))
-        sig_info_before = yaml.safe_load(subprocess.getoutput('git show {}:{}'.format(before_commit, change_sig_info_yaml)))
-        new_members = []
-        members_now = parse_sig_info_members(sig_info_now)
-        members_before = parse_sig_info_members(sig_info_before)
-        for member in members_now:
-            if member in members_before:
-                continue
-            if member not in new_members:
-                new_members.append(member)
-        if new_members:
-            new_members_check = True
-            res.append({'sig': change_sig_info_yaml.split('/')[1], 'new_members': new_members})
-    subprocess.call('git checkout master', shell=True)
-    os.chdir(pwd)
-    if new_members_check:
-        return True, res
-    return False, None
-
-
-def parse_sig_info_members(info):
-    """
-    Parse members of sig-info.yaml to a list
-    """
-    members = []
-    maintainers = info.get('maintainers')
-    if isinstance(maintainers, list):
-        for maintainer in maintainers:
-            if maintainer not in members:
-                members.append(maintainer)
-    repos = info.get('repositories')
-    if not isinstance(repos, list):
-        return members
-    for repo in repos:
-        committers = repo.get('committers')
-        if isinstance(committers, list):
-            for committer in committers:
-                if committer not in members:
-                    members.append(committer)
-        repo_admin = repo.get('repo_admin')
-        if isinstance(repo_admin, list):
-            for admin in repo_admin:
-                if admin not in members:
-                    members.append(admin)
-    return members
-
-
-def sig_info_change(git_show_msg):
-    change_sig_info = []
-    diff_files = get_pr_change_files(git_show_msg)
-    for diff_file in diff_files:
-        if len(diff_file.split('/')) == 3 and diff_file.split('/')[0] == 'sig' and \
-            diff_file.split('/')[-1] == 'sig-info.yaml':
-            change_sig_info.append(diff_file)
-    return change_sig_info
-
-
-def get_pr_change_files(git_show_msg):
-    diff_files = []
-    for line in git_show_msg.split('\n'):
-        if line.startswith('diff --git'):
-            diff_files.append(line.split(' ')[-1].split('/', 1)[1])
-    return diff_files
-
-
-def get_pr_commits(pull_link):
-    pr_number = pull_link.split('/')[-1]
-    url = 'https://gitee.com/api/v5/repos/openeuler/community/pulls/{}/commits'.format(pr_number)
-    params = {'access_token': os.getenv('ACCESS_TOKEN')}
-    r = requests.get(url, params=params)
-    if r.status_code == 200:
-        commit_count = len(r.json())
-    else:
-        log.logger.error('Fail to get commit of PR {}'.format(pull_link)) 
-        log.logger.error('The error status code is: {}'.format(r.status_code))
-        log.logger.error(r.content)
-        return '', ''
-    git_log_msg = subprocess.getoutput('git log -{}'.format(commit_count + 1))
-    commits = []
-    for line in git_log_msg.split('\n'):
-        if line.startswith('commit '):
-            commits.append(line.split(' ')[1])
-    return commits[0], commits[-1]
 
 
 def excel_optimization(filepath, compare_dict):
@@ -398,7 +245,7 @@ def send_email(xlsx_file, nickname, receivers):
     with open(html_file, 'r', encoding='utf-8') as f:
         body_of_email = f.read()
     body_of_email = body_of_email.replace(
-        '<body>', '<body><p>Dear {},</p><p>以下是openEuler社区<b style="color:red">SIG成员变更</b>的待处理PR，烦请您及时跟进</p>'.
+        '<body>', '<body><p>Dear {},</p><p>以下是openEuler社区<b style="color:red">涉及SIG信息变更</b>的待处理PR，烦请您及时跟进</p>'.
             format(nickname)).replace('&nbsp;', '0')
     content = MIMEText(body_of_email, 'html', 'utf-8')
     msg.attach(content)
@@ -421,8 +268,59 @@ def send_email(xlsx_file, nickname, receivers):
         log.logger.error(e)
 
 
+def get_all_comments(number):
+    all_comments = []
+    page = 1
+    while True:
+        url = 'https://gitee.com/api/v5/repos/openeuler/community/pulls/{}/comments'.format(number)
+        params = {
+            'page': page,
+            'per_page': 100,
+            'access_token': os.getenv('ACCESS_TOKEN')
+        }
+        r = requests.get(url, params=params)
+        if r.status_code != 200:
+            break
+        if len(r.json()) == 0:
+            break
+        all_comments.extend(r.json())
+        page += 1
+    return all_comments
+
+
+def get_pr_lgtm_list(all_comments):
+    pr_lgtm_list = []
+    review_key = '以下为 openEuler-Advisor 的 review_tool 生成审视要求清单'
+    review_key_en = 'The following table is the PR review checklist generated by the review_tool of openEuler-Advisor'
+    latest_review_comment = None
+    for comment in reversed(all_comments):
+        if comment['user']['login'] != 'openeuler-ci-bot':
+            continue
+        if review_key in comment['body'] or review_key_en in comment['body']:
+            latest_review_comment = comment
+    if not latest_review_comment:
+        return pr_lgtm_list
+
+    review_checklist = latest_review_comment['body']
+
+    for i in review_checklist.split('\n'):
+        if len(i.split('|')) != 7:
+            continue
+        if i.split('|')[5] not in ['[&#x1F534;]', '[&#x25EF;]', '[&#x1F7E1;]', '[&#x1F535;]']:
+            continue
+        for j in i.split('|')[4].split(' '):
+            if j.startswith('@') and j[1:] not in pr_lgtm_list:
+                pr_lgtm_list.append(j[1:])
+    return pr_lgtm_list
+
+
+def get_attention_members(number):
+    all_comments = get_all_comments(number)
+    return get_pr_lgtm_list(all_comments)
+
+
 if __name__ == '__main__':
     data_dir = prepare_env()
-    sigs, sigs_list = get_sigs()
-    repos_pulls_mapping = get_open_pulls()
-    pr_statistics(data_dir, sigs, repos_pulls_mapping, {})
+    open_pr_list = get_open_pulls()
+    pr_statistics(data_dir, open_pr_list)
+
